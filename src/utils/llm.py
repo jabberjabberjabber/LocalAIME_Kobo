@@ -3,6 +3,12 @@ from openai.types.chat import ChatCompletion
 
 from utils.logger import Logger
 
+TEMPERATURE = 0.6
+TOP_P = 0.95
+REP_PEN = 1
+MIN_P = 0
+TOP_K = 100
+
 class LLM:
     def __init__(self, base_url: str, model: str, api_key: str):
         self.base_url = base_url
@@ -16,21 +22,33 @@ class LLM:
             {"role": "user", "content": question}
         ]
 
+        
+        payload = {
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": TEMPERATURE,
+            "top_p": TOP_P,
+            "top_k": TOP_K,
+            "min_p": MIN_P,
+            "rep_pen": REP_PEN
+        }
+    
+        endpoint = f"{self.base_url}/chat/completions"
+        headers = {
+            "Content-Type": "application/json"
+        }
         try:
-            response: ChatCompletion = self.client.chat.completions.create(
-                messages=messages,  # type: ignore
-                model=self.model,
-                max_tokens=max_tokens,
-                stream=False,
-                timeout=timeout
-            )  # type: ignore
-        except Exception as e:
-            Logger.error('get_answer', f'API error occurred at {self.base_url}: {e}')
-            return None, None
+            response = self.requests.post(
+                endpoint,
+                json=payload,
+                headers=headers
+            )
+            
+            response.raise_for_status()
+            response_json = response.json()
+            response_text = response_json["choices"][0]["message"]["content"].strip()
+            response_tokens = response_json["usage"]["completion_tokens"]
 
-        try:
-            response_text = response.choices[0].message.content.strip()  # type: ignore
-            response_tokens = response.usage.completion_tokens  # type: ignore
         except Exception as e:
             Logger.error('get_answer', f'The response from the model was invalid (no content): {e}')
             return None, None
