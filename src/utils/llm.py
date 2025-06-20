@@ -1,6 +1,6 @@
 import openai
 from openai.types.chat import ChatCompletion
-
+import requests, json
 from utils.logger import Logger
 
 TEMPERATURE = 0.6
