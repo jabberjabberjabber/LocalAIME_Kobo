@@ -38,7 +38,7 @@ class LLM:
             "Content-Type": "application/json"
         }
         try:
-            response = self.requests.post(
+            response = requests.post(
                 endpoint,
                 json=payload,
                 headers=headers
