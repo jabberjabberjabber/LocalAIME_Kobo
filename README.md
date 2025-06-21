@@ -1,4 +1,4 @@
-##Info
+## Info
 
 **This version has been modified to work natively with KoboldCpp.**
 
