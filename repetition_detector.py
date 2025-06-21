@@ -120,7 +120,7 @@ def find_internal_repetition(pattern: str) -> Dict:
 
 def analyze_json_file(filepath: str, min_length: int = 10, 
                      min_occurrences: int = 3, decompose: bool = False, 
-                     normalize_whitespace: bool = False) -> Dict:
+                     normalize: bool = False) -> Dict:
 	"""	Load JSON file and analyze each result's response_text for 
 		repetitive patterns.
 	"""
@@ -148,7 +148,7 @@ def analyze_json_file(filepath: str, min_length: int = 10,
 			'min_length': min_length,
 			'min_occurrences': min_occurrences,
 			'decompose': decompose,
-			'normalize_whitespace': normalize_whitespace
+			'normalize': normalize
 		},
 		'entries': []
 	}
@@ -169,9 +169,9 @@ def analyze_json_file(filepath: str, min_length: int = 10,
 		
 		response_text = result['response_text']
 		
-		# Normalize whitespace if requested
-		if normalize_whitespace:
-			response_text = re.sub(r'\s+', '', response_text)
+		# Normalize
+		if normalize:
+			response_text = re.sub(r'\s+', '', response_text).lower()
 		
 		patterns = find_repeating_patterns(response_text, min_length, min_occurrences)
 		
@@ -315,8 +315,8 @@ def main():
 						help='Minimum number of repetitions required (default: 5)')
 	parser.add_argument('--decompose', action='store_true',
 						help='Analyze patterns for internal repetition (finds atomic units)')
-	parser.add_argument('--normalize-whitespace', action='store_true',
-						help='Strip whitespace to focus on semantic patterns')
+	parser.add_argument('--normalize', action='store_true',
+						help='Strip whitespace and convert to lowercase to focus on semantic patterns')
 	parser.add_argument('--output', '-o', help='Output JSON file (default: input filename with -repeats suffix)')
 	
 	args = parser.parse_args()
@@ -329,7 +329,7 @@ def main():
 	
 	try:
 		results = analyze_json_file(args.json_file, args.min_length, args.min_occurrences, 
-								   args.decompose, args.normalize_whitespace)
+								   args.decompose, args.normalize)
 		print_analysis_summary(results)
 		
 		# Always output JSON results
