@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
 """	Script to detect repetitive patterns in LLM benchmark results,
 	identifying cases where models get stuck in loops.
+	
+	Key improvements:
+	- Uses non-overlapping search to avoid inflated occurrence counts
+	- Prioritizes frequency over pattern length
+	- Detects internal repetition to find atomic repetitive units
+	- Optional whitespace normalization for semantic pattern analysis
+	- Always outputs detailed JSON results with smart default naming
 """
 
 import json
 import argparse
+import re
+from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Tuple, Set
 
 
 def find_repeating_patterns(text: str, min_length: int = 10, 
                           min_occurrences: int = 3) -> List[Tuple[str, int, List[int]]]:
-	"""	Find the longest repeating patterns in text by expanding from 
-		shorter patterns.
+	"""	Find repeating patterns in text, prioritizing frequency over length.
+		Uses non-overlapping search to avoid artificial count inflation.
 		
 		Args:
 			text: Input text to analyze
@@ -70,7 +79,7 @@ def find_repeating_patterns(text: str, min_length: int = 10,
 
 def find_all_occurrences(text: str, pattern: str) -> List[int]:
 	"""	Find all starting positions where pattern occurs in text,
-		including overlapping occurrences.
+		using non-overlapping occurrences only.
 	"""
 	positions = []
 	start = 0
@@ -79,12 +88,39 @@ def find_all_occurrences(text: str, pattern: str) -> List[int]:
 		if pos == -1:
 			break
 		positions.append(pos)
-		start = pos + 1  # Allow overlapping matches
+		start = pos + len(pattern)  # Non-overlapping matches only
 	return positions
 
 
+def find_internal_repetition(pattern: str) -> Dict:
+	"""	Check if a pattern is composed of a smaller repeating unit.
+		
+		Args:
+			pattern: The pattern to analyze
+			
+		Returns:
+			Dict with 'unit', 'repetitions' if internal repetition found, None otherwise
+	"""
+	for unit_length in range(1, len(pattern) // 2 + 1):
+		unit = pattern[:unit_length]
+		repetitions = len(pattern) / unit_length
+		
+		# Check if repeating this unit recreates the pattern
+		if unit * int(repetitions) == pattern[:int(repetitions) * unit_length]:
+			# Check if remaining chars match start of unit (for partial repetitions)
+			remainder = len(pattern) % unit_length
+			if remainder == 0 or pattern[-remainder:] == unit[:remainder]:
+				return {
+					'unit': unit,
+					'repetitions': repetitions,
+					'is_exact': remainder == 0
+				}
+	return None
+
+
 def analyze_json_file(filepath: str, min_length: int = 10, 
-                     min_occurrences: int = 3) -> Dict:
+                     min_occurrences: int = 3, decompose: bool = False, 
+                     normalize_whitespace: bool = False) -> Dict:
 	"""	Load JSON file and analyze each result's response_text for 
 		repetitive patterns.
 	"""
@@ -108,6 +144,12 @@ def analyze_json_file(filepath: str, min_length: int = 10,
 			'correct_with_repetition': 0,
 			'incorrect_with_repetition': 0
 		},
+		'analysis_settings': {
+			'min_length': min_length,
+			'min_occurrences': min_occurrences,
+			'decompose': decompose,
+			'normalize_whitespace': normalize_whitespace
+		},
 		'entries': []
 	}
 	
@@ -126,6 +168,11 @@ def analyze_json_file(filepath: str, min_length: int = 10,
 				analysis_results['incorrect_answers'] += 1
 		
 		response_text = result['response_text']
+		
+		# Normalize whitespace if requested
+		if normalize_whitespace:
+			response_text = re.sub(r'\s+', '', response_text)
+		
 		patterns = find_repeating_patterns(response_text, min_length, min_occurrences)
 		
 		has_repetition = len(patterns) > 0
@@ -149,23 +196,48 @@ def analyze_json_file(filepath: str, min_length: int = 10,
 		}
 		
 		if patterns:
-			# Add pattern information
+			# Add pattern information, including decomposition analysis if requested
 			most_frequent_pattern = patterns[0]
+			
 			entry_data['most_frequent_pattern'] = {
 				'text': most_frequent_pattern[0],
 				'length': len(most_frequent_pattern[0]),
 				'occurrences': most_frequent_pattern[1],
 				'positions': most_frequent_pattern[2]
 			}
-			entry_data['all_patterns'] = [
-				{
+			
+			# Add decomposition info if requested and found
+			if decompose:
+				internal_rep = find_internal_repetition(most_frequent_pattern[0])
+				if internal_rep:
+					entry_data['most_frequent_pattern']['internal_repetition'] = {
+						'atomic_unit': internal_rep['unit'],
+						'unit_repetitions': internal_rep['repetitions'],
+						'is_exact_repetition': internal_rep['is_exact'],
+						'total_atomic_occurrences': most_frequent_pattern[1] * internal_rep['repetitions']
+					}
+			
+			entry_data['all_patterns'] = []
+			for p in patterns:
+				pattern_info = {
 					'text': p[0],
 					'length': len(p[0]),
 					'occurrences': p[1],
 					'positions': p[2]
 				}
-				for p in patterns
-			]
+				
+				# Check each pattern for internal repetition if requested
+				if decompose:
+					internal = find_internal_repetition(p[0])
+					if internal:
+						pattern_info['internal_repetition'] = {
+							'atomic_unit': internal['unit'],
+							'unit_repetitions': internal['repetitions'],
+							'is_exact_repetition': internal['is_exact'],
+							'total_atomic_occurrences': p[1] * internal['repetitions']
+						}
+				
+				entry_data['all_patterns'].append(pattern_info)
 		
 		analysis_results['entries'].append(entry_data)
 	
@@ -217,6 +289,14 @@ def print_analysis_summary(results: Dict):
 			if 'most_frequent_pattern' in entry:
 				most_frequent = entry['most_frequent_pattern']
 				print(f"  Most frequent pattern: {most_frequent['length']} chars, {most_frequent['occurrences']} times")
+				
+				# Show decomposition info if available
+				if 'internal_repetition' in most_frequent:
+					internal = most_frequent['internal_repetition']
+					exactness = "exact" if internal['is_exact_repetition'] else "partial"
+					print(f"  → Atomic unit: '{internal['atomic_unit']}' × {internal['unit_repetitions']:.1f} ({exactness})")
+					print(f"  → Total atomic occurrences: {internal['total_atomic_occurrences']:.1f}")
+				
 				preview = most_frequent['text'][:150]
 				print(f"  Preview: '{preview}{'...' if len(most_frequent['text']) > 150 else ''}'")
 		
@@ -229,22 +309,33 @@ def main():
 		description="Detect repetitive patterns in LLM benchmark results"
 	)
 	parser.add_argument('json_file', help='Path to JSON file containing results')
-	parser.add_argument('--min-length', type=int, default=50,
-						help='Minimum pattern length to search for (default: 50)')
+	parser.add_argument('--min-length', type=int, default=25,
+						help='Minimum pattern length to search for (default: 25)')
 	parser.add_argument('--min-occurrences', type=int, default=5,
 						help='Minimum number of repetitions required (default: 5)')
-	parser.add_argument('--output', '-o', help='Output detailed results to JSON file')
+	parser.add_argument('--decompose', action='store_true',
+						help='Analyze patterns for internal repetition (finds atomic units)')
+	parser.add_argument('--normalize-whitespace', action='store_true',
+						help='Strip whitespace to focus on semantic patterns')
+	parser.add_argument('--output', '-o', help='Output JSON file (default: input filename with -repeats suffix)')
 	
 	args = parser.parse_args()
 	
+	# Generate default output filename if not provided
+	if not args.output:
+		input_path = Path(args.json_file)
+		output_filename = f"{input_path.stem}-repeats{input_path.suffix}"
+		args.output = input_path.parent / output_filename
+	
 	try:
-		results = analyze_json_file(args.json_file, args.min_length, args.min_occurrences)
+		results = analyze_json_file(args.json_file, args.min_length, args.min_occurrences, 
+								   args.decompose, args.normalize_whitespace)
 		print_analysis_summary(results)
 		
-		if args.output:
-			with open(args.output, 'w', encoding='utf-8') as f:
-				json.dump(results, f, indent=2, ensure_ascii=False)
-			print(f"\nDetailed results saved to: {args.output}")
+		# Always output JSON results
+		with open(args.output, 'w', encoding='utf-8') as f:
+			json.dump(results, f, indent=2, ensure_ascii=False)
+		print(f"\nDetailed results saved to: {args.output}")
 			
 	except Exception as e:
 		print(f"Error: {e}")
