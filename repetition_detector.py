@@ -229,9 +229,9 @@ def main():
 		description="Detect repetitive patterns in LLM benchmark results"
 	)
 	parser.add_argument('json_file', help='Path to JSON file containing results')
-	parser.add_argument('--min-length', type=int, default=10,
+	parser.add_argument('--min-length', type=int, default=50,
 						help='Minimum pattern length to search for (default: 50)')
-	parser.add_argument('--min-occurrences', type=int, default=3,
+	parser.add_argument('--min-occurrences', type=int, default=5,
 						help='Minimum number of repetitions required (default: 5)')
 	parser.add_argument('--output', '-o', help='Output detailed results to JSON file')
 	
