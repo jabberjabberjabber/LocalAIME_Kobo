@@ -20,7 +20,7 @@ def find_repeating_patterns(text: str, min_length: int = 10,
 			min_occurrences: Minimum number of times pattern must repeat
 			
 		Returns:
-			List of (pattern, count, positions) tuples, sorted by pattern length desc
+			List of (pattern, count, positions) tuples, sorted by occurrence count desc
 	"""
 	if len(text) < min_length * min_occurrences:
 		return []
@@ -63,8 +63,8 @@ def find_repeating_patterns(text: str, min_length: int = 10,
 				for i in range(pos, pos + len(best_pattern)):
 					found_patterns.add(i)
 	
-	# Sort by pattern length (longest first), then by count
-	results.sort(key=lambda x: (-len(x[0]), -x[1]))
+	# Sort by occurrence count (most frequent first), then by pattern length
+	results.sort(key=lambda x: (-x[1], -len(x[0])))
 	return results
 
 
@@ -150,12 +150,12 @@ def analyze_json_file(filepath: str, min_length: int = 10,
 		
 		if patterns:
 			# Add pattern information
-			longest_pattern = patterns[0]
-			entry_data['longest_pattern'] = {
-				'text': longest_pattern[0],
-				'length': len(longest_pattern[0]),
-				'occurrences': longest_pattern[1],
-				'positions': longest_pattern[2]
+			most_frequent_pattern = patterns[0]
+			entry_data['most_frequent_pattern'] = {
+				'text': most_frequent_pattern[0],
+				'length': len(most_frequent_pattern[0]),
+				'occurrences': most_frequent_pattern[1],
+				'positions': most_frequent_pattern[2]
 			}
 			entry_data['all_patterns'] = [
 				{
@@ -214,11 +214,11 @@ def print_analysis_summary(results: Dict):
 			print(f"  Text length: {entry['text_length']} characters")
 			print(f"  Patterns found: {entry['patterns_found']}")
 			
-			if 'longest_pattern' in entry:
-				longest = entry['longest_pattern']
-				print(f"  Longest pattern: {longest['length']} chars, {longest['occurrences']} times")
-				preview = longest['text'][:150]
-				print(f"  Preview: '{preview}{'...' if len(longest['text']) > 150 else ''}'")
+			if 'most_frequent_pattern' in entry:
+				most_frequent = entry['most_frequent_pattern']
+				print(f"  Most frequent pattern: {most_frequent['length']} chars, {most_frequent['occurrences']} times")
+				preview = most_frequent['text'][:150]
+				print(f"  Preview: '{preview}{'...' if len(most_frequent['text']) > 150 else ''}'")
 		
 		if len(entries_with_patterns) > 3:
 			print(f"\n... and {len(entries_with_patterns) - 3} more entries with repetition")
@@ -230,9 +230,9 @@ def main():
 	)
 	parser.add_argument('json_file', help='Path to JSON file containing results')
 	parser.add_argument('--min-length', type=int, default=10,
-						help='Minimum pattern length to search for (default: 10)')
+						help='Minimum pattern length to search for (default: 50)')
 	parser.add_argument('--min-occurrences', type=int, default=3,
-						help='Minimum number of repetitions required (default: 3)')
+						help='Minimum number of repetitions required (default: 5)')
 	parser.add_argument('--output', '-o', help='Output detailed results to JSON file')
 	
 	args = parser.parse_args()
